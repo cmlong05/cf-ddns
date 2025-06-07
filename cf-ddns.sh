@@ -171,11 +171,11 @@ main() {
     log "Starting Cloudflare DDNS update for type: $type"
     # 获取当前 IP 地址
     if [ "$type" = "A" ]; then
-        local ipv4=$(get_ipv4_address)
-        check_ip_change "$ipv4" "A"
+        local ip=$(get_ipv4_address)
+        check_ip_change "$ip" "A"
     elif [ "$type" = "AAAA" ]; then
-        local ipv6=$(get_ipv6_address)
-        check_ip_change "$ipv6" "AAAA"
+        local ip=$(get_ipv6_address)
+        check_ip_change "$ip" "AAAA"
     fi
 
     # 获取zone和记录标识符
@@ -184,11 +184,11 @@ main() {
     echo "record_identifier: $record_identifier"
 
     # 更新 DNS 记录
-    update_dns_records "$zone_identifier" "$record_identifier" "$ipv4" "$type"
+    update_dns_records "$zone_identifier" "$record_identifier" "$ip" "$type"
 
     # 发送邮件通知
     if [ "$sender_email" = "1" ]; then
-        send_email "$recipient_email" "$ipv4" "$ipv6"
+        send_email "$recipient_email" "$ip"
     else
         log "Email sending is disabled."
     fi

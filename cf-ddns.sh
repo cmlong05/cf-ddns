@@ -45,24 +45,21 @@ check_variables() {
     fi
 }
 
-# 获取当前 IP 地址
-get_ipv6_address() {
-    local ipv6=$(ip route get 1:: | awk '{print $(NF-4);exit}')
-    if [ -z "$ip" ]; then
-        log "no ipv6 address get，print ip a, then reload wlan0"
-        exit 2
-    fi
-    echo "$ip"
-}
-get_ipv4_address() {
-    local ipv4=$(wget -qO- checkip.amazonaws.com)
-    if [ -z "$ipv4" ]; then
-        log "no ipv4 address get，print ip a, then reload wlan0"
-        exit 2
-    fi
-    echo "$ipv4"
-}
+# 根据type A AAAA 判断 获取当前 IPv4 或 IPv6 地址
+get_ip_address() {
+    local type="$1"
+    if [ "$type" = "A" ]; then
+        local ip=$(wget -qO- checkip.amazonaws.com)
+        echo "$ip" 
+    elif [ "$type" = "AAAA" ]; then
+        local ip=$(ip route get 1:: | awk '{print $(NF-4);exit}')
+        echo "$ip"
+    else
+        log "Unknown type: $type"
+        exit 5
+    fi    
 
+}
 # 检查 IP 地址是否变化（支持 IPv4/IPv6，参数1为新IP，参数2为类型A或AAAA）
 check_ip_change() {
     local new_ip="$1"
@@ -169,14 +166,10 @@ main() {
         exit 1
     fi
     log "Starting Cloudflare DDNS update for type: $type"
-    # 获取当前 IP 地址
-    if [ "$type" = "A" ]; then
-        local ip=$(get_ipv4_address)
-        check_ip_change "$ip" "A"
-    elif [ "$type" = "AAAA" ]; then
-        local ip=$(get_ipv6_address)
-        check_ip_change "$ip" "AAAA"
-    fi
+    # 获取当前 IP 地址并检测
+    local ip=$(get_ip_address)
+    check_ip_change "$ip" "$type"
+
 
     # 获取zone和记录标识符
     IFS=' ' read -r zone_identifier record_identifier <<< "$(get_identifiers)"

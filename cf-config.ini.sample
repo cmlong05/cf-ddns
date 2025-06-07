@@ -6,15 +6,15 @@ auth_key=your_cloudflare_api_key
 zone_name=your_domain.com
 record_name=your_record.your_domain.com
 # 记录类型，A 为 IPv4，AAAA 为 IPv6，A,AAAA 为同时更新 IPv4 和 IPv6
-record_type={A,AAAA}
+record_type="A AAAA"
 
 
 # 按需要修改
 cloudflare_log=cloudflare.log
 ipv4_file=ipv4.ini
 ipv6_file=ipv6.ini
-zone_identifier=zone_identifier.ids
-record_identifier=record_identifier.ids
+zone_identifier_file=zone_identifier.ids
+record_identifier_file=record_identifier.ids
 
 # 邮件信息 使用msmtp 发送邮件，需要先配置好，如无需发送邮件提醒，可设置sender_email=0
 sender_email=0

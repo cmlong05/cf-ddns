@@ -174,11 +174,7 @@ main() {
     echo "record_identifier: $record_identifier"
 
     # 更新 DNS 记录
-    if [ "$type" = "A" ]; then
-        update_dns_records "$zone_identifier" "$record_identifier" "$ipv4" "A"
-    elif [ "$type" = "AAAA" ]; then
-        update_dns_records "$zone_identifier" "$record_identifier" "$ipv6" "AAAA"
-    fi
+    update_dns_records "$zone_identifier" "$record_identifier" "$ipv4" "$type"
 
     # 发送邮件通知
     if [ "$sender_email" = "1" ]; then

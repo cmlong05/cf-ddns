@@ -52,7 +52,7 @@ get_ip_address() {
         local ip=$(wget -qO- checkip.amazonaws.com)
         echo "$ip" 
     elif [ "$type" = "AAAA" ]; then
-        local ip=$(ip route get 1:: | awk '{print $(NF-4);exit}')
+        local ip=$(ip -6 -j route get 1:: | jq -r '.[0].prefsrc')
         echo "$ip"
     else
         log "Unknown type: $type"
@@ -79,7 +79,7 @@ check_ip_change() {
         old_ip=$(cat "$ip_file")
         if [ "$new_ip" = "$old_ip" ]; then
             echo -e "IP has not changed." >> "$cloudflare_log"
-            exit 3
+            return 3
         fi
     fi
 }
@@ -168,6 +168,9 @@ main() {
     # 获取当前 IP 地址并检测
     local ip=$(get_ip_address "$type")
     check_ip_change "$ip" "$type"
+    if [ $? -eq 3 ]; then
+        return
+    fi
 
     # 获取zone和记录标识符
     IFS=' ' read -r zone_identifier record_identifier <<< "$(get_identifiers)"

@@ -167,9 +167,8 @@ main() {
     fi
     log "Starting Cloudflare DDNS update for type: $type"
     # 获取当前 IP 地址并检测
-    local ip=$(get_ip_address)
+    local ip=$(get_ip_address "$type")
     check_ip_change "$ip" "$type"
-
 
     # 获取zone和记录标识符
     IFS=' ' read -r zone_identifier record_identifier <<< "$(get_identifiers)"

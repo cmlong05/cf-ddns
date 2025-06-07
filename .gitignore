@@ -2,3 +2,7 @@ cf-config.ini
 ip.ini
 cloudflare.ids
 cloudflare.log
+ipv4.ini
+ipv6.ini
+record_identifier.ids
+zone_identifier.ids

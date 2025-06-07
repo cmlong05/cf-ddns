@@ -21,7 +21,7 @@ log() {
 
 # 检查必要变量是否为空
 check_variables() {
-    local vars=("auth_email" "auth_key" "zone_name" "record_name" "record_type" "zone_identifier" "record_identifier" "cloudflare_log" "sender_email")
+    local vars=("auth_email" "auth_key" "zone_name" "record_name" "record_type" "zone_identifier_file" "record_identifier_file" "cloudflare_log" "sender_email")
     for var in "${vars[@]}"; do
         if [ -z "${!var}" ]; then
             log "Error: $var is not set."
@@ -33,14 +33,14 @@ check_variables() {
         log "Error: recipient_email is not set while sender_email is true."
         exit 1
     fi
-    # record_type 包含 A 时，检测 ipv4_file 是否存在
-    if [[ "$record_type" =~ A ]] && [ ! -f "$ipv4_file" ]; then
-        log "Error: ipv4_file is not set or does not exist while record_type contains A."
+    # record_type 包含 A 时，检测 ipv4_file 
+    if [[ "$record_type" =~ A ]] && [ -z "${ipv4_file}" ]; then
+        log "Error: ipv4_file is not set"
         exit 1
     fi
-    # record_type 包含 AAAA 时，检测 ipv6_file 是否存在
-    if [[ "$record_type" =~ AAAA ]] && [ ! -f "$ipv6_file" ]; then
-        log "Error: ipv6_file is not set or does not exist while record_type contains AAAA."
+    # record_type 包含 AAAA 时，检测 ipv6_file 
+    if [[ "$record_type" =~ AAAA ]] && [ -z "${ipv4_file}"  ]; then
+        log "Error: ipv6_file is not set "
         exit 1
     fi
 }
@@ -107,7 +107,6 @@ get_identifiers() {
         echo "$zone_identifier $record_identifier"
     fi
 }
-
 # 发送邮件通知
 send_email() {
     local recipient="$1"
@@ -128,6 +127,16 @@ update_dns_records() {
     local record_identifier="$2"
     local ip="$3"
     local type="$4"
+    local ip_file
+
+    if [ "$type" = "A" ]; then
+        ip_file="$ipv4_file"
+    elif [ "$type" = "AAAA" ]; then
+        ip_file="$ipv6_file"
+    else
+        log "Unknown IP type: $type"
+        exit 4
+    fi
 
     echo 'start update'
     local update=$(curl -s -X PUT "https://api.cloudflare.com/client/v4/zones/$zone_identifier/dns_records/$record_identifier" -H "X-Auth-Email: $auth_email" -H "X-Auth-Key: $auth_key" -H "Content-Type: application/json" --data "{\"id\":\"$zone_identifier\",\"type\":\"$type\",\"name\":\"$record_name\",\"content\":\"$ip\"}")
@@ -154,6 +163,7 @@ main() {
         log "Error: No type specified. Use 'A' for IPv4 or 'AAAA' for IPv6."
         exit 1
     fi
+
     if [[ "$type" != "A" && "$type" != "AAAA" ]]; then
         log "Error: Invalid type specified. Use 'A' for IPv4 or 'AAAA' for IPv6."
         exit 1

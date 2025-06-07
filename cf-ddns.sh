@@ -37,16 +37,36 @@ check_variables() {
 
 # 获取当前 IPv6 地址
 get_ipv6_address() {
-    local ip=$(ip route get 1:: | awk '{print $(NF-4);exit}')
+    local ipv6=$(ip route get 1:: | awk '{print $(NF-4);exit}')
     if [ -z "$ip" ]; then
         log "no ipv6 address get，print ip a, then reload wlan0"
         exit 2
     fi
     echo "$ip"
 }
+get_ipv4_address() {
+    local ipv4=$(wget -qO- checkip.amazonaws.com)
+    if [ -z "$ipv4" ]; then
+        log "no ipv4 address get，print ip a, then reload wlan0"
+        exit 2
+    fi
+    echo "$ipv4"
+}
+
+# 检查 IPv4 地址是否变化
+check_ipv4_change() {
+    local new_ip="$1"
+    if [ -f "$ip_file" ]; then
+        local old_ip=$(cat "$ip_file")
+        if [ "$new_ip" = "$old_ip" ]; then
+            echo -e "IP has not changed." >> "$cloudflare_log"
+            exit 3
+        fi
+    fi
+}
 
 # 检查 IPv6 地址是否变化
-check_ip_change() {
+check_ipv6_change() {
     local new_ip="$1"
     if [ -f "$ip_file" ]; then
         local old_ip=$(cat "$ip_file")
@@ -95,9 +115,10 @@ update_dns_records() {
     local zone_identifier="$1"
     local record_identifier="$2"
     local ip="$3"
+    local type="$4"
 
     echo 'start update'
-    local update=$(curl -s -X PUT "https://api.cloudflare.com/client/v4/zones/$zone_identifier/dns_records/$record_identifier" -H "X-Auth-Email: $auth_email" -H "X-Auth-Key: $auth_key" -H "Content-Type: application/json" --data "{\"id\":\"$zone_identifier\",\"type\":\"AAAA\",\"name\":\"$record_name\",\"content\":\"$ip\",\"proxied\":true}")
+    local update=$(curl -s -X PUT "https://api.cloudflare.com/client/v4/zones/$zone_identifier/dns_records/$record_identifier" -H "X-Auth-Email: $auth_email" -H "X-Auth-Key: $auth_key" -H "Content-Type: application/json" --data "{\"id\":\"$zone_identifier\",\"type\":\"$type\",\"name\":\"$record_name\",\"content\":\"$ip\",\"proxied\":true}")
 
     # 记录响应日志
     echo "updating response"
@@ -117,8 +138,10 @@ update_dns_records() {
 # 主函数，脚本执行入口
 main() {
     check_variables
-    local ip=$(get_ipv6_address)
-    check_ip_change "$ip"
+    local ipv4=$(get_ipv4_address)
+    local ipv6=$(get_ipv6_address)
+    check_ipv4_change "$ipv4"
+    check_ipv6_change "$ipv6"
     IFS=' ' read -r zone_identifier record_identifier <<< "$(get_identifiers)"
     echo "zone_identifier: $zone_identifier"
     echo "record_identifier: $record_identifier"
@@ -127,7 +150,9 @@ main() {
     else
         log "Email sending is disabled."
     fi
-    update_dns_records "$zone_identifier" "$record_identifier" "$ip"
+    update_dns_records "$zone_identifier" "$record_identifier" "$ipv4" "A"
+    update_dns_records "$zone_identifier" "$record_identifier" "$ipv6" "AAAA"
+    
     # 保持日志文件大小
     echo "$(tail -n 100 "$cloudflare_log")" > "$cloudflare_log"
 }

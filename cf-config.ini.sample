@@ -1,0 +1,17 @@
+# 根据不同系统修改获取当前 IPv6 的命令行
+auth_email=sample@gmail.com
+auth_key=xxxxxxxxxxxxxxxxxx
+
+# 若以下信息更改，需要删除 cloudflare.ids 文件以获取新的 ID
+zone_name=sample.cn
+record_name=pi.sample.cn
+
+# 按需要修改
+ip_file=ip.ini
+id_file=cloudflare.ids
+cloudflare_log=cloudflare.log
+
+# 邮件信息 使用msmtp 发送邮件，需要先配置好，如无需发送邮件提醒，可设置sender_email=0
+sender_email=0
+recipient_email=sample@qq.com
+

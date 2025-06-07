@@ -91,7 +91,6 @@ get_identifiers() {
        [ -f "$record_identifier_file" ] && [ -s "$record_identifier_file" ]; then
         local zone_identifier=$(cat "$zone_identifier_file")
         local record_identifier=$(cat "$record_identifier_file")
-        echo "successfully read identifiers from files"
         echo "$zone_identifier $record_identifier"
     else
         local zone_identifier=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones?name=$zone_name" \

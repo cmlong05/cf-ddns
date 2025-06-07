@@ -21,7 +21,7 @@ log() {
 
 # 检查必要变量是否为空
 check_variables() {
-    local vars=("auth_email" "auth_key" "zone_name" "record_name" "ip_file" "id_file" "cloudflare_log" "sender_email")
+    local vars=("auth_email" "auth_key" "zone_name" "record_name" "record_type" "zone_identifier" "record_identifier" "cloudflare_log" "sender_email")
     for var in "${vars[@]}"; do
         if [ -z "${!var}" ]; then
             log "Error: $var is not set."
@@ -33,9 +33,19 @@ check_variables() {
         log "Error: recipient_email is not set while sender_email is true."
         exit 1
     fi
+    # record_type 包含 A 时，检测 ipv4_file 是否存在
+    if [[ "$record_type" =~ A ]] && [ ! -f "$ipv4_file" ]; then
+        log "Error: ipv4_file is not set or does not exist while record_type contains A."
+        exit 1
+    fi
+    # record_type 包含 AAAA 时，检测 ipv6_file 是否存在
+    if [[ "$record_type" =~ AAAA ]] && [ ! -f "$ipv6_file" ]; then
+        log "Error: ipv6_file is not set or does not exist while record_type contains AAAA."
+        exit 1
+    fi
 }
 
-# 获取当前 IPv6 地址
+# 获取当前 IP 地址
 get_ipv6_address() {
     local ipv6=$(ip route get 1:: | awk '{print $(NF-4);exit}')
     if [ -z "$ip" ]; then
@@ -53,23 +63,23 @@ get_ipv4_address() {
     echo "$ipv4"
 }
 
-# 检查 IPv4 地址是否变化
-check_ipv4_change() {
+# 检查 IP 地址是否变化（支持 IPv4/IPv6，参数1为新IP，参数2为类型A或AAAA）
+check_ip_change() {
     local new_ip="$1"
-    if [ -f "$ip_file" ]; then
-        local old_ip=$(cat "$ip_file")
-        if [ "$new_ip" = "$old_ip" ]; then
-            echo -e "IP has not changed." >> "$cloudflare_log"
-            exit 3
-        fi
+    local type="$2"
+    local ip_file
+    if [ "$type" = "A" ]; then
+        ip_file="$ipv4_file"
+    elif [ "$type" = "AAAA" ]; then
+        ip_file="$ipv6_file"
+    else
+        log "Unknown IP type: $type"
+        exit 4
     fi
-}
 
-# 检查 IPv6 地址是否变化
-check_ipv6_change() {
-    local new_ip="$1"
     if [ -f "$ip_file" ]; then
-        local old_ip=$(cat "$ip_file")
+        local old_ip
+        old_ip=$(cat "$ip_file")
         if [ "$new_ip" = "$old_ip" ]; then
             echo -e "IP has not changed." >> "$cloudflare_log"
             exit 3
@@ -79,19 +89,21 @@ check_ipv6_change() {
 
 # 获取区域和记录标识符
 get_identifiers() {
-    if [ -f "$id_file" ] && [ "$(wc -l "$id_file" | cut -d " " -f 1)" -eq 3 ]; then
-        source "$id_file"
-        local zone_identifier=$($zone_name)
-        local record_identifier=$($record_name)
-        echo "successfully read identifiers from $id_file"
+    # 检查 zone_identifier_file 和 record_identifier_file 是否存在且内容不为空
+    if [ -f "$zone_identifier_file" ] && [ -s "$zone_identifier_file" ] && \
+       [ -f "$record_identifier_file" ] && [ -s "$record_identifier_file" ]; then
+        local zone_identifier=$(cat "$zone_identifier_file")
+        local record_identifier=$(cat "$record_identifier_file")
+        echo "successfully read identifiers from files"
         echo "$zone_identifier $record_identifier"
-        exit 0
     else
-        local zone_identifier=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones?name=$zone_name" -H "X-Auth-Email: $auth_email" -H "X-Auth-Key: $auth_key" -H "Content-Type: application/json" | jq -r '.result[0].id')
-        local record_identifier=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/$zone_identifier/dns_records?name=$record_name" -H "X-Auth-Email: $auth_email" -H "X-Auth-Key: $auth_key" -H "Content-Type: application/json" | jq -r '.result[0].id')
+        local zone_identifier=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones?name=$zone_name" \
+            -H "X-Auth-Email: $auth_email" -H "X-Auth-Key: $auth_key" -H "Content-Type: application/json" | jq -r '.result[0].id')
+        local record_identifier=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/$zone_identifier/dns_records?name=$record_name" \
+            -H "X-Auth-Email: $auth_email" -H "X-Auth-Key: $auth_key" -H "Content-Type: application/json" | jq -r '.result[0].id')
 
-        echo "$zone_name="$zone_identifier"" > "$id_file"
-        echo "$record_name="$$record_identifier"" >> "$id_file"
+        echo "$zone_identifier" > "$zone_identifier_file"
+        echo "$record_identifier" > "$record_identifier_file"
         echo "$zone_identifier $record_identifier"
     fi
 }
@@ -99,14 +111,14 @@ get_identifiers() {
 # 发送邮件通知
 send_email() {
     local recipient="$1"
+    local ipv4="$2"
+    local ipv6="$3"
     if [ -z "$recipient" ]; then
         log "Error: Recipient email is not provided."
         return 1
     fi
-    local ipa=$(ip a)
-    local iproute=$(ip route get 1::)
     echo "send mail start"
-    echo -e "Subject: Raspian Changed \n\n Route \n $iproute \n $ipa" | msmtp -a default "$recipient"
+    echo -e "Subject: Raspian Changed\n\nIPv4: $ipv4\nIPv6: $ipv6" | msmtp -a default "$recipient"
     echo "send mail finished"
 }
 
@@ -118,7 +130,7 @@ update_dns_records() {
     local type="$4"
 
     echo 'start update'
-    local update=$(curl -s -X PUT "https://api.cloudflare.com/client/v4/zones/$zone_identifier/dns_records/$record_identifier" -H "X-Auth-Email: $auth_email" -H "X-Auth-Key: $auth_key" -H "Content-Type: application/json" --data "{\"id\":\"$zone_identifier\",\"type\":\"$type\",\"name\":\"$record_name\",\"content\":\"$ip\",\"proxied\":true}")
+    local update=$(curl -s -X PUT "https://api.cloudflare.com/client/v4/zones/$zone_identifier/dns_records/$record_identifier" -H "X-Auth-Email: $auth_email" -H "X-Auth-Key: $auth_key" -H "Content-Type: application/json" --data "{\"id\":\"$zone_identifier\",\"type\":\"$type\",\"name\":\"$record_name\",\"content\":\"$ip\"}")
 
     # 记录响应日志
     echo "updating response"
@@ -137,27 +149,53 @@ update_dns_records() {
 
 # 主函数，脚本执行入口
 main() {
-    check_variables
-    local ipv4=$(get_ipv4_address)
-    local ipv6=$(get_ipv6_address)
-    check_ipv4_change "$ipv4"
-    check_ipv6_change "$ipv6"
+    local type="$1"
+    if [ -z "$type" ]; then
+        log "Error: No type specified. Use 'A' for IPv4 or 'AAAA' for IPv6."
+        exit 1
+    fi
+    if [[ "$type" != "A" && "$type" != "AAAA" ]]; then
+        log "Error: Invalid type specified. Use 'A' for IPv4 or 'AAAA' for IPv6."
+        exit 1
+    fi
+    log "Starting Cloudflare DDNS update for type: $type"
+    # 获取当前 IP 地址
+    if [ "$type" = "A" ]; then
+        local ipv4=$(get_ipv4_address)
+        check_ip_change "$ipv4" "A"
+    elif [ "$type" = "AAAA" ]; then
+        local ipv6=$(get_ipv6_address)
+        check_ip_change "$ipv6" "AAAA"
+    fi
+
+    # 获取zone和记录标识符
     IFS=' ' read -r zone_identifier record_identifier <<< "$(get_identifiers)"
     echo "zone_identifier: $zone_identifier"
     echo "record_identifier: $record_identifier"
+
+    # 更新 DNS 记录
+    if [ "$type" = "A" ]; then
+        update_dns_records "$zone_identifier" "$record_identifier" "$ipv4" "A"
+    elif [ "$type" = "AAAA" ]; then
+        update_dns_records "$zone_identifier" "$record_identifier" "$ipv6" "AAAA"
+    fi
+
+    # 发送邮件通知
     if [ "$sender_email" = "1" ]; then
-        send_email "$recipient_email"
+        send_email "$recipient_email" "$ipv4" "$ipv6"
     else
         log "Email sending is disabled."
     fi
-    update_dns_records "$zone_identifier" "$record_identifier" "$ipv4" "A"
-    update_dns_records "$zone_identifier" "$record_identifier" "$ipv6" "AAAA"
-    
     # 保持日志文件大小
     echo "$(tail -n 100 "$cloudflare_log")" > "$cloudflare_log"
 }
 
-# 日志记录脚本检查开始
-log "Check Initiated"
-# 执行主函数
-main
+# 检查必要变量
+check_variables
+
+# 执行主函数循环record_type
+for type in $record_type; do
+    main "$type"
+done
+
+

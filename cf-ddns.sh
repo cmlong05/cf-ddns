@@ -1,4 +1,6 @@
 #!/bin/bash
+# 切换到脚本所在目录
+cd "$(dirname "$0")" || exit 1
 # 设置 PATH 环境变量，确保系统能找到常用命令
 export PATH=/usr/bin:/bin:/usr/sbin:/sbin
 

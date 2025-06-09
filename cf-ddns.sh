@@ -23,7 +23,7 @@ log() {
 
 # 检查必要变量是否为空
 check_variables() {
-    local vars=("auth_email" "auth_key" "zone_name" "record_name" "record_type" "zone_identifier_file" "record_identifier_file" "cloudflare_log" "sender_email")
+    local vars=("auth_email" "auth_key" "zone_name" "record_name" "record_type" "cloudflare_log" "sender_email")
     for var in "${vars[@]}"; do
         if [ -z "${!var}" ]; then
             log "Error: $var is not set."
@@ -36,13 +36,13 @@ check_variables() {
         exit 1
     fi
     # record_type 包含 A 时，检测 ipv4_file 
-    if [[ "$record_type" =~ A ]] && [ -z "${ipv4_file}" ]; then
-        log "Error: ipv4_file is not set"
+    if [[ " $record_type " =~ " A " ]] && [ -z "${ipv4_file}" ] && [ -z "$($zone_identifier_v4_file)"]; then
+        log "Error: ipv4_file or zone_identifier_v4_file is not set"
         exit 1
     fi
     # record_type 包含 AAAA 时，检测 ipv6_file 
-    if [[ "$record_type" =~ AAAA ]] && [ -z "${ipv4_file}"  ]; then
-        log "Error: ipv6_file is not set "
+    if [[ " $record_type " =~ " AAAA " ]] && [ -z "${ipv6_file}" ] && [ -z "$($zone_identifier_v6_file)"]; then
+        log "Error: ipv6_file or zone_identifier_v6_file is not set "
         exit 1
     fi
 }
@@ -88,6 +88,15 @@ check_ip_change() {
 
 # 获取区域和记录标识符
 get_identifiers() {
+    local type="$1"
+    if [ "$type" = "A" ]; then
+        local record_identifier_file="$record_identifier_v4_file"
+    elif [ "$type" = "AAAA" ]; then
+        local record_identifier_file="$record_identifier_v6_file"
+    else
+        log "Unknown type: $type"
+        exit 5
+    fi
     # 检查 zone_identifier_file 和 record_identifier_file 是否存在且内容不为空
     if [ -f "$zone_identifier_file" ] && [ -s "$zone_identifier_file" ] && \
        [ -f "$record_identifier_file" ] && [ -s "$record_identifier_file" ]; then
@@ -97,8 +106,14 @@ get_identifiers() {
     else
         local zone_identifier=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones?name=$zone_name" \
             -H "X-Auth-Email: $auth_email" -H "X-Auth-Key: $auth_key" -H "Content-Type: application/json" | jq -r '.result[0].id')
-        local record_identifier=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/$zone_identifier/dns_records?name=$record_name" \
+        local record_identifier=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/$zone_identifier/dns_records?name=$record_name&type=$type" \
             -H "X-Auth-Email: $auth_email" -H "X-Auth-Key: $auth_key" -H "Content-Type: application/json" | jq -r '.result[0].id')
+        
+        # 检查是否成功获取到标识符
+        if [ -z "$zone_identifier" ] || [ -z "$record_identifier" ]; then
+            log "Error: Failed to retrieve zone or record identifier."
+            exit 6
+        fi
 
         echo "$zone_identifier" > "$zone_identifier_file"
         echo "$record_identifier" > "$record_identifier_file"
@@ -137,7 +152,7 @@ update_dns_records() {
     fi
 
     echo 'start update'
-    local update=$(curl -s -X PUT "https://api.cloudflare.com/client/v4/zones/$zone_identifier/dns_records/$record_identifier" -H "X-Auth-Email: $auth_email" -H "X-Auth-Key: $auth_key" -H "Content-Type: application/json" --data "{\"id\":\"$zone_identifier\",\"type\":\"$type\",\"name\":\"$record_name\",\"content\":\"$ip\"}")
+    local update=$(curl -s -X PATCH "https://api.cloudflare.com/client/v4/zones/$zone_identifier/dns_records/$record_identifier" -H "X-Auth-Email: $auth_email" -H "X-Auth-Key: $auth_key" -H "Content-Type: application/json" --data "{\"type\":\"$type\",\"name\":\"$record_name\",\"content\":\"$ip\"}")
 
     # 记录响应日志
     echo "updating response"
@@ -175,7 +190,7 @@ main() {
     fi
 
     # 获取zone和记录标识符
-    IFS=' ' read -r zone_identifier record_identifier <<< "$(get_identifiers)"
+    IFS=' ' read -r zone_identifier record_identifier <<< "$(get_identifiers "$type")"
     echo "zone_identifier: $zone_identifier"
     echo "record_identifier: $record_identifier"
 
@@ -199,5 +214,3 @@ check_variables
 for type in $record_type; do
     main "$type"
 done
-
-

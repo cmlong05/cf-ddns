@@ -14,7 +14,8 @@ cloudflare_log=cloudflare.log
 ipv4_file=ipv4.ini
 ipv6_file=ipv6.ini
 zone_identifier_file=zone_identifier.ids
-record_identifier_file=record_identifier.ids
+record_identifier_v4_file=record_identifier_v4.ids
+record_identifier_v6_file=record_identifier_v6.ids
 
 # 邮件信息 使用msmtp 发送邮件，需要先配置好，如无需发送邮件提醒，可设置sender_email=0
 sender_email=0

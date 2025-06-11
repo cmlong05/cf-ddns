@@ -51,14 +51,14 @@ check_variables() {
 get_ip_address() {
     local type="$1"
     if [ "$type" = "A" ]; then
-        local ip=$(wget --timeout=10 --tries=2 -qO- checkip.amazonaws.com)
+        local ip=$(curl --max-time 10 --retry 2 https://checkip.amazonaws.com)
         if [ -z "$ip" ]; then
             log "Failed to get IPv4 address (timeout or error)."
             exit 6
         fi
         echo "$ip" 
     elif [ "$type" = "AAAA" ]; then
-        local ip=$(ip -6 -j route get 1:: | jq -r '.[0].prefsrc')
+        local ip=$(curl --max-time 10 --retry 2 https://ipv6.icanhazip.com)
         echo "$ip"
     else
         log "Unknown type: $type"

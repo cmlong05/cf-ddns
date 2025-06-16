@@ -93,6 +93,7 @@ check_ip_change() {
 # 获取区域和记录标识符
 get_identifiers() {
     local type="$1"
+    log "started get identifiers"
     if [ "$type" = "A" ]; then
         local record_identifier_file="$record_identifier_v4_file"
     elif [ "$type" = "AAAA" ]; then
@@ -118,7 +119,12 @@ get_identifiers() {
             log "Error: Failed to retrieve zone or record identifier."
             exit 6
         fi
-
+        # 判断record_identifier是否为null
+        if [ "$record_identifier" = "null" ]; then
+            log "Error: record_identifier is null."
+            exit 6
+        fi
+        log "finished get identifiers"
         echo "$zone_identifier" > "$zone_identifier_file"
         echo "$record_identifier" > "$record_identifier_file"
         echo "$zone_identifier $record_identifier"

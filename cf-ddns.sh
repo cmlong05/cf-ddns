@@ -23,7 +23,7 @@ log() {
 
 # 检查必要变量是否为空
 check_variables() {
-    local vars=("auth_email" "auth_key" "zone_name" "record_name" "record_type" "cloudflare_log" "sender_email")
+    local vars=("auth_token" "zone_name" "record_name" "record_type" "cloudflare_log" "sender_email")
     for var in "${vars[@]}"; do
         if [ -z "${!var}" ]; then
             log "Error: $var is not set."
@@ -110,9 +110,9 @@ get_identifiers() {
         echo "$zone_identifier $record_identifier"
     else
         local zone_identifier=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones?name=$zone_name" \
-            -H "X-Auth-Email: $auth_email" -H "X-Auth-Key: $auth_key" -H "Content-Type: application/json" | jq -r '.result[0].id')
+            -H "Authorization: Bearer $auth_token" -H "Content-Type: application/json" | jq -r '.result[0].id')
         local record_identifier=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/$zone_identifier/dns_records?name=$record_name&type=$type" \
-            -H "X-Auth-Email: $auth_email" -H "X-Auth-Key: $auth_key" -H "Content-Type: application/json" | jq -r '.result[0].id')
+            -H "Authorization: Bearer $auth_token" -H "Content-Type: application/json" | jq -r '.result[0].id')
         
         # 检查是否成功获取到标识符
         if [ -z "$zone_identifier" ] || [ -z "$record_identifier" ]; then
@@ -162,7 +162,7 @@ update_dns_records() {
     fi
 
     echo 'start update'
-    local update=$(curl -s -X PATCH "https://api.cloudflare.com/client/v4/zones/$zone_identifier/dns_records/$record_identifier" -H "X-Auth-Email: $auth_email" -H "X-Auth-Key: $auth_key" -H "Content-Type: application/json" --data "{\"type\":\"$type\",\"name\":\"$record_name\",\"content\":\"$ip\"}")
+    local update=$(curl -s -X PATCH "https://api.cloudflare.com/client/v4/zones/$zone_identifier/dns_records/$record_identifier" -H "Authorization: Bearer $auth_token" -H "Content-Type: application/json" --data "{\"type\":\"$type\",\"name\":\"$record_name\",\"content\":\"$ip\"}")
 
     # 记录响应日志
     echo "updating response"

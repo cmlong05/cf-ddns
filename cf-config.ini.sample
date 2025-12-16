@@ -1,6 +1,5 @@
 # 根据不同系统修改获取当前 IPv6 的命令行
-auth_email=your_email@example.com
-auth_key=your_cloudflare_api_key
+auth_token=your_cloudflare_api_token
 
 # 若以下信息更改，需要删除 cloudflare.ids 文件以获取新的 ID
 zone_name=your_domain.com

@@ -58,7 +58,7 @@ get_ip_address() {
         fi
         echo "$ip" 
     elif [ "$type" = "AAAA" ]; then
-        local ip=$(ip -6 addr show scope global | grep -v "deprecated" | awk '/inet6/{print $2}' | head -n 1 | cut -d'/' -f1)
+        local ip=$(ip route get 1:: | awk '{print $(NF-4);exit 1}')
         if [ -z "$ip" ]; then
             log "Failed to get IPv6 address from local network interfaces."
             exit 6

@@ -36,12 +36,12 @@ check_variables() {
         exit 1
     fi
     # record_type 包含 A 时，检测 ipv4_file 
-    if [[ " $record_type " =~ " A " ]] && [ -z "${ipv4_file}" ] && [ -z "$($zone_identifier_v4_file)"]; then
+    if [[ " $record_type " =~ " A " ]] && [ -z "${ipv4_file}" ] && [ -z "${$zone_identifier_v4_file}"]; then
         log "Error: ipv4_file or zone_identifier_v4_file is not set"
         exit 1
     fi
     # record_type 包含 AAAA 时，检测 ipv6_file 
-    if [[ " $record_type " =~ " AAAA " ]] && [ -z "${ipv6_file}" ] && [ -z "$($zone_identifier_v6_file)"]; then
+    if [[ " $record_type " =~ " AAAA " ]] && [ -z "${ipv6_file}" ] && [ -z "${$zone_identifier_v6_file}"]; then
         log "Error: ipv6_file or zone_identifier_v6_file is not set "
         exit 1
     fi

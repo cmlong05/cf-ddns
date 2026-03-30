@@ -8,7 +8,7 @@ export PATH=/usr/bin:/bin:/usr/sbin:/sbin
 # 读取配置文件
 CONFIG_FILE="$(dirname "$(realpath "$0")")/cf-config.ini"
 if [ -f "$CONFIG_FILE" ]; then
-    source "$CONFIG_FILE"
+    . "$CONFIG_FILE"
 else
     echo "Config file $CONFIG_FILE not found."
     exit 1
@@ -17,15 +17,15 @@ fi
 # 日志函数，记录带时间戳的日志信息
 log() {
     if [ -n "$1" ]; then
-        echo -e "[$(date)] - $1" >> "$cloudflare_log"
+        printf "[%s] - %s\n" "$(date)" "$1" >> "$cloudflare_log"
     fi
 }
 
 # 检查必要变量是否为空
 check_variables() {
-    local vars=("auth_token" "zone_name" "record_name" "record_type" "cloudflare_log" "sender_email")
-    for var in "${vars[@]}"; do
-        if [ -z "${!var}" ]; then
+    for var in auth_token zone_name record_name record_type cloudflare_log sender_email; do
+        eval "val=\${$var}"
+        if [ -z "$val" ]; then
             log "Error: $var is not set."
             exit 1
         fi
@@ -35,15 +35,19 @@ check_variables() {
         log "Error: recipient_email is not set while sender_email is true."
         exit 1
     fi
-    # record_type 包含 A 时，检测 ipv4_file 
-    if [[ " $record_type " =~ " A " ]] && [ -z "${ipv4_file}" ] && [ -z "${$zone_identifier_v4_file}"]; then
-        log "Error: ipv4_file or zone_identifier_v4_file is not set"
-        exit 1
+    # record_type 包含 A 时，检测 ipv4_file
+    if echo " $record_type " | grep -q " A "; then
+        if [ -z "$ipv4_file" ] && [ -z "$zone_identifier_v4_file" ]; then
+            log "Error: ipv4_file or zone_identifier_v4_file is not set"
+            exit 1
+        fi
     fi
-    # record_type 包含 AAAA 时，检测 ipv6_file 
-    if [[ " $record_type " =~ " AAAA " ]] && [ -z "${ipv6_file}" ] && [ -z "${$zone_identifier_v6_file}"]; then
-        log "Error: ipv6_file or zone_identifier_v6_file is not set "
-        exit 1
+    # record_type 包含 AAAA 时，检测 ipv6_file
+    if echo " $record_type " | grep -q " AAAA "; then
+        if [ -z "$ipv6_file" ] && [ -z "$zone_identifier_v6_file" ]; then
+            log "Error: ipv6_file or zone_identifier_v6_file is not set"
+            exit 1
+        fi
     fi
 }
 
@@ -51,14 +55,16 @@ check_variables() {
 get_ip_address() {
     local type="$1"
     if [ "$type" = "A" ]; then
-        local ip=$(curl --max-time 10 --retry 2 https://checkip.amazonaws.com)
+        local ip
+        ip=$(curl --max-time 10 --retry 2 https://checkip.amazonaws.com)
         if [ -z "$ip" ]; then
             log "Failed to get IPv4 address (timeout or error)."
             exit 6
         fi
-        echo "$ip" 
+        echo "$ip"
     elif [ "$type" = "AAAA" ]; then
-        local ip=$(ip route get 1:: | awk '{print $(NF-4);exit 1}')
+        local ip
+        ip=$(ip route get 1:: | awk '{print $(NF-4);exit 1}')
         if [ -z "$ip" ]; then
             log "Failed to get IPv6 address from local network interfaces."
             exit 6
@@ -67,9 +73,9 @@ get_ip_address() {
     else
         log "Unknown type: $type"
         exit 5
-    fi    
-
+    fi
 }
+
 # 检查 IP 地址是否变化（支持 IPv4/IPv6，参数1为新IP，参数2为类型A或AAAA）
 check_ip_change() {
     local new_ip="$1"
@@ -88,7 +94,7 @@ check_ip_change() {
         local old_ip
         old_ip=$(cat "$ip_file")
         if [ "$new_ip" = "$old_ip" ]; then
-            echo -e "IP has not changed." >> "$cloudflare_log"
+            printf "IP has not changed.\n" >> "$cloudflare_log"
             return 3
         fi
     fi
@@ -97,11 +103,12 @@ check_ip_change() {
 # 获取区域和记录标识符
 get_identifiers() {
     local type="$1"
+    local record_identifier_file
     log "started get identifiers"
     if [ "$type" = "A" ]; then
-        local record_identifier_file="$record_identifier_v4_file"
+        record_identifier_file="$record_identifier_v4_file"
     elif [ "$type" = "AAAA" ]; then
-        local record_identifier_file="$record_identifier_v6_file"
+        record_identifier_file="$record_identifier_v6_file"
     else
         log "Unknown type: $type"
         exit 5
@@ -109,15 +116,19 @@ get_identifiers() {
     # 检查 zone_identifier_file 和 record_identifier_file 是否存在且内容不为空
     if [ -f "$zone_identifier_file" ] && [ -s "$zone_identifier_file" ] && \
        [ -f "$record_identifier_file" ] && [ -s "$record_identifier_file" ]; then
-        local zone_identifier=$(cat "$zone_identifier_file")
-        local record_identifier=$(cat "$record_identifier_file")
+        local zone_identifier
+        local record_identifier
+        zone_identifier=$(cat "$zone_identifier_file")
+        record_identifier=$(cat "$record_identifier_file")
         echo "$zone_identifier $record_identifier"
     else
-        local zone_identifier=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones?name=$zone_name" \
+        local zone_identifier
+        local record_identifier
+        zone_identifier=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones?name=$zone_name" \
             -H "Authorization: Bearer $auth_token" -H "Content-Type: application/json" | jq -r '.result[0].id')
-        local record_identifier=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/$zone_identifier/dns_records?name=$record_name&type=$type" \
+        record_identifier=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/$zone_identifier/dns_records?name=$record_name&type=$type" \
             -H "Authorization: Bearer $auth_token" -H "Content-Type: application/json" | jq -r '.result[0].id')
-        
+
         # 检查是否成功获取到标识符
         if [ -z "$zone_identifier" ] || [ -z "$record_identifier" ]; then
             log "Error: Failed to retrieve zone or record identifier."
@@ -134,6 +145,7 @@ get_identifiers() {
         echo "$zone_identifier $record_identifier"
     fi
 }
+
 # 发送邮件通知
 send_email() {
     local recipient="$1"
@@ -144,7 +156,7 @@ send_email() {
         return 1
     fi
     echo "send mail start"
-    echo -e "Subject: Raspian Changed\n\nIPv4: $ipv4\nIPv6: $ipv6" | msmtp -a default "$recipient"
+    printf "Subject: Raspian Changed\n\nIPv4: %s\nIPv6: %s\n" "$ipv4" "$ipv6" | msmtp -a default "$recipient"
     echo "send mail finished"
 }
 
@@ -166,21 +178,29 @@ update_dns_records() {
     fi
 
     echo 'start update'
-    local update=$(curl -s -X PATCH "https://api.cloudflare.com/client/v4/zones/$zone_identifier/dns_records/$record_identifier" -H "Authorization: Bearer $auth_token" -H "Content-Type: application/json" --data "{\"type\":\"$type\",\"name\":\"$record_name\",\"content\":\"$ip\"}")
+    local update
+    update=$(curl -s -X PATCH "https://api.cloudflare.com/client/v4/zones/$zone_identifier/dns_records/$record_identifier" \
+        -H "Authorization: Bearer $auth_token" -H "Content-Type: application/json" \
+        --data "{\"type\":\"$type\",\"name\":\"$record_name\",\"content\":\"$ip\"}")
 
     # 记录响应日志
     echo "updating response"
-    if [[ $update == *"\"success\":false"* ]]; then
-        local message="API UPDATE FAILED. DUMPING RESULTS:\n$update"
-        log "$message"
-        echo -e "$message"
-        exit 7
-    else
-        local message="IP changed to: $ip"
-        log "$message"
-        echo "$ip" > "$ip_file"
-        echo -e "$message"
-    fi
+    case "$update" in
+        *'"success":false'*)
+            local message
+            message="API UPDATE FAILED. DUMPING RESULTS:\n$update"
+            log "$message"
+            printf "%s\n" "$message"
+            exit 7
+            ;;
+        *)
+            local message
+            message="IP changed to: $ip"
+            log "$message"
+            echo "$ip" > "$ip_file"
+            printf "%s\n" "$message"
+            ;;
+    esac
 }
 
 # 主函数，脚本执行入口
@@ -191,20 +211,24 @@ main() {
         exit 1
     fi
 
-    if [[ "$type" != "A" && "$type" != "AAAA" ]]; then
+    if [ "$type" != "A" ] && [ "$type" != "AAAA" ]; then
         log "Error: Invalid type specified. Use 'A' for IPv4 or 'AAAA' for IPv6."
         exit 1
     fi
     log "Starting Cloudflare DDNS update for type: $type"
     # 获取当前 IP 地址并检测
-    local ip=$(get_ip_address "$type")
+    local ip
+    ip=$(get_ip_address "$type")
     check_ip_change "$ip" "$type"
     if [ $? -eq 3 ]; then
         return
     fi
 
     # 获取zone和记录标识符
-    IFS=' ' read -r zone_identifier record_identifier <<< "$(get_identifiers "$type")"
+    local zone_identifier record_identifier
+    IFS=' ' read -r zone_identifier record_identifier << EOF
+$(get_identifiers "$type")
+EOF
     echo "zone_identifier: $zone_identifier"
     echo "record_identifier: $record_identifier"
 
@@ -218,7 +242,7 @@ main() {
         log "Email sending is disabled."
     fi
     # 保持日志文件大小
-    echo "$(tail -n 100 "$cloudflare_log")" > "$cloudflare_log"
+    printf "%s\n" "$(tail -n 100 "$cloudflare_log")" > "$cloudflare_log"
 }
 
 # 检查必要变量
